@@ -22,12 +22,15 @@ See notes at end for glyph nomenclature & other tidbits.
 #include <ft2build.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <math.h>
 #include FT_GLYPH_H
 #include FT_MODULE_H
 #include FT_TRUETYPE_DRIVER_H
 #include "gfxfont.h" // Adafruit_GFX font structures
 
 #define DPI 141 // Approximate res. of Adafruit 2.8" TFT
+
+static uint8_t* grey_values;
 
 // Accumulate bits for output, with periodic hexadecimal byte write
 void enbit(uint8_t value, uint8_t reset) {
@@ -148,19 +151,7 @@ int generate(char* filepath, char* fontName, int size, int first, int last, int 
         byte = x;
         bit = 0x80 >> (x & 7);
         uint8_t buffer_val = bitmap->buffer[y * bitmap->pitch + byte];
-        // Method for calculating values:
-        // With 0.25, 0.5, 0.75
-        // Using the equation Vlin = Venc^2.2, we get
-        // Venc = 0.53252, 0.72974, 0.87742
-        // Mapping [0,1] onto [0,255]:
-        // 136, 186, 234
-        if (lightness==0 && (255-buffer_val) < 136) {
-          enbit(bit, 0);
-        }
-        else if (lightness==1 && (255-buffer_val) < 186) {
-          enbit(bit, 0);
-        }
-        else if (lightness==2 && (255-buffer_val) < 234) {
+        if ((255-buffer_val) < grey_values[lightness]) {
           enbit(bit, 0);
         }
         else {
@@ -223,28 +214,30 @@ int generate(char* filepath, char* fontName, int size, int first, int last, int 
 }
 
 int main(int argc, char *argv[]) {
-  int i, size, first = ' ', last = '~';
+  int i, levels, size, first = ' ', last = '~';
   char* filepath;
   char *fontName, *fontNameG, c, *ptr;
   // Parse command line.  Valid syntaxes are:
-  //   fontconvert [filename] [size]
-  //   fontconvert [filename] [size] [last char]
-  //   fontconvert [filename] [size] [first char] [last char]
+  //   fontconvert [grey levels] [filename] [size]
+  //   fontconvert [grey levels] [filename] [size] [last char]
+  //   fontconvert [grey levels] [filename] [size] [first char] [last char]
   // Unless overridden, default first and last chars are
   // ' ' (space) and '~', respectively
 
-  if (argc < 3) {
-    fprintf(stderr, "Usage: %s fontfile size [first] [last]\n", argv[0]);
+  if (argc < 4) {
+    fprintf(stderr, "Usage: %s greylevels fontfile size [first] [last]\n", argv[0]);
     return 1;
   }
 
-  size = atoi(argv[2]);
+  levels = atoi(argv[1]);
 
-  if (argc == 4) {
-    last = atoi(argv[3]);
-  } else if (argc == 5) {
-    first = atoi(argv[3]);
+  size = atoi(argv[3]);
+
+  if (argc == 5) {
     last = atoi(argv[4]);
+  } else if (argc == 6) {
+    first = atoi(argv[4]);
+    last = atoi(argv[5]);
   }
 
   if (last < first) {
@@ -253,7 +246,12 @@ int main(int argc, char *argv[]) {
     last = i;
   }
 
-  filepath = argv[1];
+  filepath = argv[2];
+
+  grey_values = malloc((levels-1)*sizeof(uint8_t));
+  for (i = 1; i <= levels-1; ++i) {
+    grey_values[i-1] = round(255*pow(i*(1.0/levels), 5.0/11.0));
+  }
 
   ptr = strrchr(filepath, '/'); // Find last slash in filename
   if (ptr)
@@ -283,16 +281,17 @@ int main(int argc, char *argv[]) {
       fontName[i] = '_';
   }
 
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < levels-1; ++i) {
     sprintf(fontNameG, "%sGrey%d", fontName, i);
     generate(filepath, fontNameG, size, first, last, i);
+    printf("\n");
   }
 
   printf("const GFXfont %s[] = {\n", fontName);
-  for (int i = 0; i < 3; ++i) {
+  for (int i = 0; i < levels-1; ++i) {
     printf("  %sGrey%d", fontName, i);
-    if (i!=2) { printf(",\n"); } 
-    else { printf("\n};\n"); }
+    if (i<levels-2) { printf(",\n"); } 
+    else { printf("\n};\n\n"); }
   }
 
   return 0;
