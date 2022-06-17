@@ -1,18 +1,21 @@
 #include <driver/rtc_io.h>
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
-#include "time.h"
+#include <time.h>
 
-#include <GxEPD2_BW.h>
-#include <GxEPD2_3C.h>
-#include <GxEPD2_7C.h>
+#include <GxEPD2_4G_4G.h>
+#include <GxEPD2_4G_BW.h>
+
+#include "fonts/NotoSerif_Regular10pt7b.h"
+#include "fonts/NotoSerif_Regular56pt7b.h"
 
 // Peripherals
-GxEPD2_BW<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(/*CS=5*/ 8, /*DC=*/ 7, /*RST=*/ 6, /*BUSY=*/ 5)); 
+GxEPD2_4G_4G<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
 #define DISPLAY_W 296
 #define DISPLAY_H 128
+#define DISPLAY_ROTATION 3
 
 // TODO: make configurable in nonvolatile memory
 static const char* const WIFI_SSID     = "wifi-name";
@@ -46,6 +49,42 @@ void sync_time() {
   configTzTime(POSIX_TX, NTP_SERVER1, NTP_SERVER2, NTP_SERVER3);
 }
 
+void disp_full_update(char* date, char* time) {
+  int16_t x, y;
+  uint16_t w, h;
+  int16_t dx, dy, tx, ty;
+  display.getTextBounds(date, 0, 0, &x, &y, &w, &h); //calc width of new string
+  dx = (DISPLAY_W/2 - w) / 2;
+  dy = y + 3;
+  display.getTextBounds(time, 0, 0, &x, &y, &w, &h);
+  tx = (DISPLAY_W/2 - w) / 2;
+  ty = dy + y + 3;
+
+  display.setFullWindow();
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+    display.setTextColor(GxEPD_BLACK);
+    // Date
+    for (int i = 2; i >= 0; --i) {
+      display.setTextColor((i==2) ? GxEPD_LIGHTGREY : (i==1) ? GxEPD_DARKGREY : GxEPD_BLACK);
+      display.setFont(&NotoSerif_Regular10pt7b[i]);
+      display.setCursor(dx, dy);
+      display.print(date);
+    }
+    // Time
+    for (int i = 2; i >= 0; --i) {
+      display.setTextColor((i==2) ? GxEPD_LIGHTGREY : (i==1) ? GxEPD_DARKGREY : GxEPD_BLACK);
+      display.setFont(&NotoSerif_Regular56pt7b[i]);
+      display.setCursor(tx, ty);
+      display.print(time);
+    }
+  } while (display.nextPage());
+}
+
+void disp_partial_update() {
+}
+
 void setup() {
   esp_sleep_wakeup_cause_t wakeup_reason;
 
@@ -75,7 +114,7 @@ void setup() {
     evt_us_time_sync_timeout = WIFI_TIMEOUT_US;
     // Print Message
     display.init(115200);
-    display.setRotation(3);
+    display.setRotation(DISPLAY_ROTATION);
     display.clearScreen();
     display.setPartialWindow(0, DISPLAY_H/2, DISPLAY_W, DISPLAY_H/2);
     display.firstPage();
@@ -93,6 +132,11 @@ void setup() {
 void loop() {
   struct timeval tv_now;
   uint64_t epoch_us;
+  struct tm now; // Display Time
+  static int last_tm_min;
+  char str_date[24]; // Longest date string: "Wednesday, Sep 20, 2019" = 23 chars + \0
+  char str_time[6]; // Longest time "12:00" = 5 chars + \0
+
 
   // Placeholder
   btn = 0;
@@ -145,27 +189,19 @@ void loop() {
 
   /* Update Time */
 
-  struct tm now; // Display Time
   getLocalTime(&now, 0);
+  strftime(str_date, sizeof(str_date), "%A, $b %e %G", &now);
+  strftime(str_time, sizeof(str_time), "%I:%M", &now);
 
-  char buf[255];
-  strftime(buf, sizeof(buf), " %B %d %Y %H:%M:%S (%A)", &now);
-  Serial.println(buf);
-  // TODO: ensure display is only updated if something changed
-  // TODO: only update display if year is not <2000
-  display.init(115200);
-  display.setRotation(3);
-  display.setPartialWindow(0, 0, DISPLAY_W, DISPLAY_H/2);
-  display.firstPage();
-  do {
-      display.fillScreen(GxEPD_WHITE);
-      display.setTextColor(GxEPD_BLACK);
-      display.setCursor(5, 5);
-      display.print(buf);
-      display.setCursor(5, 40);
-      display.print(btn);
-  } while (display.nextPage());
-  display.hibernate();
+  if (now.tm_min != last_tm_min) {
+    display.init(115200);
+    display.setRotation(3);
+    disp_full_update(str_date, str_time);
+    //disp_partial_update();
+    display.hibernate();
+
+    last_tm_min = now.tm_min;
+  }
 
   gettimeofday(&tv_now, NULL);
   epoch_us = (uint64_t)tv_now.tv_sec*1000000L + (uint64_t)tv_now.tv_usec;
