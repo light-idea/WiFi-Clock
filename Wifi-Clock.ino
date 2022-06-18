@@ -3,19 +3,31 @@
 #include <WiFi.h>
 #include <time.h>
 
-#include <GxEPD2_4G_4G.h>
-#include <GxEPD2_4G_BW.h>
+//#include <GxEPD2_4G_4G.h>
+//#include <GxEPD2_4G_BW.h>
+#include <GxEPD2_BW.h>
+#include <GxEPD2_3C.h>
+#include <GxEPD2_7C.h>
 
 #include "fonts/NotoSerif_Regular10pt7b.h"
 #include "fonts/NotoSerif_Regular56pt7b.h"
 
 // Peripherals
-GxEPD2_4G_4G<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
+//GxEPD2_4G_4G<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
+GxEPD2_BW<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
 #define DISPLAY_W 296
 #define DISPLAY_H 128
 #define DISPLAY_ROTATION 3
+
+#define PADDING_TOP 1
+#define PADDING_BOT 11
+#define TIME_OFFSET_X -6
+#define DATE_OFFSET_X -5
+
+#define PM_WIDTH 12
+#define PM_HEIGHT 12
 
 // TODO: make configurable in nonvolatile memory
 static const char* const WIFI_SSID     = "wifi-name";
@@ -25,6 +37,7 @@ static const char* const NTP_SERVER1   = "pool.ntp.org";
 static const char* const NTP_SERVER2   = "pool.ntp.org";
 static const char* const NTP_SERVER3   = "pool.ntp.org";
 static const char* const POSIX_TX      = "MST7MDT,M3.2.0,M11.1.0"; // https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv
+static const uint8_t HOUR_12_24_N = 1;
 static const uint32_t LIGHT1_COLOR = 0xFF0000;
 static const uint16_t LIGHT1_BRIGHTNESS = 50;
 static const uint64_t LIGHT1_TIMEOUT_US = 30*1000000L;
@@ -36,6 +49,8 @@ static const uint64_t LIGHT2_TIMEOUT_US = 20*1000000L;
 RTC_DATA_ATTR static uint64_t evt_us_time_sync_timeout = 0;
 RTC_DATA_ATTR static uint64_t evt_us_light_off = 0;
 RTC_DATA_ATTR static uint64_t evt_us_debounce = 0;
+RTC_DATA_ATTR static uint8_t first_update = 0;
+RTC_DATA_ATTR static int last_tm_min;
 
 #define DEBOUNCE_STAGES 5
 #define DEBOUNCE_STAGE_US 10000
@@ -49,18 +64,28 @@ void sync_time() {
   configTzTime(POSIX_TX, NTP_SERVER1, NTP_SERVER2, NTP_SERVER3);
 }
 
-void disp_full_update(char* date, char* time) {
+void disp_update(char* date, char* time, uint8_t full_update) {
   int16_t x, y;
   uint16_t w, h;
-  int16_t dx, dy, tx, ty;
+  int16_t date_x, date_y, time_x, time_y;
+  display.setFont(&NotoSerif_Regular10pt7b[0]);
   display.getTextBounds(date, 0, 0, &x, &y, &w, &h); //calc width of new string
-  dx = (DISPLAY_W/2 - w) / 2;
-  dy = y + 3;
+  date_x = (DISPLAY_W/2 - w/2) + DATE_OFFSET_X;
+  date_y = h + PADDING_TOP;
+  display.setFont(&NotoSerif_Regular56pt7b[0]);
   display.getTextBounds(time, 0, 0, &x, &y, &w, &h);
-  tx = (DISPLAY_W/2 - w) / 2;
-  ty = dy + y + 3;
+  time_x = (DISPLAY_W/2 - w/2) + TIME_OFFSET_X;
+  time_y = DISPLAY_H - PADDING_BOT;
 
-  display.setFullWindow();
+  Serial.print("Full update: ");
+  Serial.println(full_update);
+
+  //if (full_update) {
+  //  display.setFullWindow();
+  //}
+  //else {
+    display.setPartialWindow(0, 0, DISPLAY_W, DISPLAY_H);
+  //}
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
@@ -69,20 +94,21 @@ void disp_full_update(char* date, char* time) {
     for (int i = 2; i >= 0; --i) {
       display.setTextColor((i==2) ? GxEPD_LIGHTGREY : (i==1) ? GxEPD_DARKGREY : GxEPD_BLACK);
       display.setFont(&NotoSerif_Regular10pt7b[i]);
-      display.setCursor(dx, dy);
+      display.setCursor(date_x, date_y);
       display.print(date);
     }
     // Time
     for (int i = 2; i >= 0; --i) {
       display.setTextColor((i==2) ? GxEPD_LIGHTGREY : (i==1) ? GxEPD_DARKGREY : GxEPD_BLACK);
       display.setFont(&NotoSerif_Regular56pt7b[i]);
-      display.setCursor(tx, ty);
+      display.setCursor(time_x, time_y);
       display.print(time);
     }
+    if (HOUR_12_24_N) {
+      display.fillRect(DISPLAY_W-PM_WIDTH, DISPLAY_H-PM_HEIGHT, 
+                            PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
+    }
   } while (display.nextPage());
-}
-
-void disp_partial_update() {
 }
 
 void setup() {
@@ -109,6 +135,7 @@ void setup() {
   }
 
   if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Not a Wake-up
+    first_update = 1;
     // Sync Time over WiFi
     sync_time();
     evt_us_time_sync_timeout = WIFI_TIMEOUT_US;
@@ -133,7 +160,6 @@ void loop() {
   struct timeval tv_now;
   uint64_t epoch_us;
   struct tm now; // Display Time
-  static int last_tm_min;
   char str_date[24]; // Longest date string: "Wednesday, Sep 20, 2019" = 23 chars + \0
   char str_time[6]; // Longest time "12:00" = 5 chars + \0
 
@@ -190,16 +216,24 @@ void loop() {
   /* Update Time */
 
   getLocalTime(&now, 0);
-  strftime(str_date, sizeof(str_date), "%A, $b %e %G", &now);
-  strftime(str_time, sizeof(str_time), "%I:%M", &now);
+  strftime(str_date, sizeof(str_date), "%A, %b %e %G", &now);
+  if (HOUR_12_24_N) {
+    strftime(str_time, sizeof(str_time), "%l:%M", &now);
+  }
+  else {
+    strftime(str_time, sizeof(str_time), "%I:%M", &now);
+  }
+
+  Serial.print("firstupdate: ");
+  Serial.println(first_update);
 
   if (now.tm_min != last_tm_min) {
     display.init(115200);
     display.setRotation(3);
-    disp_full_update(str_date, str_time);
-    //disp_partial_update();
+    disp_update(str_date, str_time, (now.tm_min % 5)==0 || first_update);
     display.hibernate();
 
+    first_update = 0;
     last_tm_min = now.tm_min;
   }
 
@@ -225,10 +259,6 @@ void loop() {
   if (evt_us_light_off         > epoch_us && evt_next > evt_us_light_off)         evt_next = evt_us_light_off;
   if (evt_us_time_sync_timeout > epoch_us && evt_next > evt_us_time_sync_timeout) evt_next = evt_us_time_sync_timeout;
 
-  //uint64_t delay_ms = (evt_next - epoch_us) / 1000;
-  //uint64_t delay_us = (evt_next - epoch_us) % 1000;
-  //delay(delay_ms);
-  //delayMicroseconds(delay_us);
 
   uint64_t sleep_us = evt_next - epoch_us;
   Serial.println("Delay us: ");
@@ -236,6 +266,7 @@ void loop() {
 
   Serial.flush();
 
+#ifdef SLEEP_ENABLE
   //esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON); // needed to keep button pullups enabled, NEOPIXEL_POWER HIGH
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_15, 0); // Wake on button A press
   esp_sleep_enable_ext1_wakeup(1<<11, ESP_EXT1_WAKEUP_ALL_LOW); // Wake on button D press
@@ -252,4 +283,11 @@ void loop() {
     digitalWrite(EPD_RESET, LOW); // hardware power down mode
     esp_deep_sleep_start();
   }
+#else
+  uint64_t delay_ms = (evt_next - epoch_us) / 1000;
+  uint64_t delay_us = (evt_next - epoch_us) % 1000;
+  delay(delay_ms);
+  delayMicroseconds(delay_us);
+#endif
+
 }
