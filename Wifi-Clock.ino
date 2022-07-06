@@ -3,47 +3,11 @@
 #include <WiFi.h>
 #include <time.h>
 
-//#include <GxEPD2_4G_4G.h>
-//#include <GxEPD2_4G_BW.h>
-#include <GxEPD2_BW.h>
-#include <GxEPD2_3C.h>
-#include <GxEPD2_7C.h>
-
-#include "fonts/NotoSerif_Regular10pt7b.h"
-#include "fonts/NotoSerif_Regular56pt7b.h"
+#include "config.h"
+#include "display.h"
 
 // Peripherals
-//GxEPD2_4G_4G<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
-GxEPD2_BW<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
-
-#define DISPLAY_W 296
-#define DISPLAY_H 128
-#define DISPLAY_ROTATION 3
-
-#define PADDING_TOP 1
-#define PADDING_BOT 11
-#define TIME_OFFSET_X -6
-#define DATE_OFFSET_X -5
-
-#define PM_WIDTH 12
-#define PM_HEIGHT 12
-
-// TODO: make configurable in nonvolatile memory
-static const char* const WIFI_SSID     = "wifi-name";
-static const char* const WIFI_PASSWORD = "wifi-password";
-static const uint64_t WIFI_TIMEOUT_US = 30*1000000L;
-static const char* const NTP_SERVER1   = "pool.ntp.org";
-static const char* const NTP_SERVER2   = "pool.ntp.org";
-static const char* const NTP_SERVER3   = "pool.ntp.org";
-static const char* const POSIX_TX      = "MST7MDT,M3.2.0,M11.1.0"; // https://github.com/nayarsystems/posix_tz_db/blob/master/zones.csv
-static const uint8_t HOUR_12_24_N = 1;
-static const uint32_t LIGHT1_COLOR = 0xFF0000;
-static const uint16_t LIGHT1_BRIGHTNESS = 50;
-static const uint64_t LIGHT1_TIMEOUT_US = 30*1000000L;
-static const uint32_t LIGHT2_COLOR = 0xFFFFFF;
-static const uint16_t LIGHT2_BRIGHTNESS = 50;
-static const uint64_t LIGHT2_TIMEOUT_US = 20*1000000L;
 
 // Using uint64_t since time_t is small and signed
 RTC_DATA_ATTR static uint64_t evt_us_time_sync_timeout = 0;
@@ -62,53 +26,6 @@ void sync_time() {
   //WiFi.config(IP, GATEWAY, SUBNET, DNS); // Uncomment to use static addresses
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   configTzTime(POSIX_TX, NTP_SERVER1, NTP_SERVER2, NTP_SERVER3);
-}
-
-void disp_update(char* date, char* time, uint8_t full_update) {
-  int16_t x, y;
-  uint16_t w, h;
-  int16_t date_x, date_y, time_x, time_y;
-  display.setFont(&NotoSerif_Regular10pt7b[0]);
-  display.getTextBounds(date, 0, 0, &x, &y, &w, &h); //calc width of new string
-  date_x = (DISPLAY_W/2 - w/2) + DATE_OFFSET_X;
-  date_y = h + PADDING_TOP;
-  display.setFont(&NotoSerif_Regular56pt7b[0]);
-  display.getTextBounds(time, 0, 0, &x, &y, &w, &h);
-  time_x = (DISPLAY_W/2 - w/2) + TIME_OFFSET_X;
-  time_y = DISPLAY_H - PADDING_BOT;
-
-  Serial.print("Full update: ");
-  Serial.println(full_update);
-
-  //if (full_update) {
-  //  display.setFullWindow();
-  //}
-  //else {
-    display.setPartialWindow(0, 0, DISPLAY_W, DISPLAY_H);
-  //}
-  display.firstPage();
-  do {
-    display.fillScreen(GxEPD_WHITE);
-    display.setTextColor(GxEPD_BLACK);
-    // Date
-    for (int i = 2; i >= 0; --i) {
-      display.setTextColor((i==2) ? GxEPD_LIGHTGREY : (i==1) ? GxEPD_DARKGREY : GxEPD_BLACK);
-      display.setFont(&NotoSerif_Regular10pt7b[i]);
-      display.setCursor(date_x, date_y);
-      display.print(date);
-    }
-    // Time
-    for (int i = 2; i >= 0; --i) {
-      display.setTextColor((i==2) ? GxEPD_LIGHTGREY : (i==1) ? GxEPD_DARKGREY : GxEPD_BLACK);
-      display.setFont(&NotoSerif_Regular56pt7b[i]);
-      display.setCursor(time_x, time_y);
-      display.print(time);
-    }
-    if (HOUR_12_24_N) {
-      display.fillRect(DISPLAY_W-PM_WIDTH, DISPLAY_H-PM_HEIGHT, 
-                            PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
-    }
-  } while (display.nextPage());
 }
 
 void setup() {
@@ -139,19 +56,7 @@ void setup() {
     // Sync Time over WiFi
     sync_time();
     evt_us_time_sync_timeout = WIFI_TIMEOUT_US;
-    // Print Message
-    display.init(115200);
-    display.setRotation(DISPLAY_ROTATION);
-    display.clearScreen();
-    display.setPartialWindow(0, DISPLAY_H/2, DISPLAY_W, DISPLAY_H/2);
-    display.firstPage();
-    do {
-        display.fillScreen(GxEPD_WHITE);
-        display.setTextColor(GxEPD_BLACK);
-        display.setCursor(5, DISPLAY_H/2+5);
-        display.print("Syncing Time...");
-    } while (display.nextPage());
-    display.hibernate();
+    display_clear();
   }
 
 }
@@ -189,8 +94,8 @@ void loop() {
   }
 
   if (btn == 0xC) {
-    display.init(115200);
-    display.clearScreen();
+    display_clear();
+    first_update = 1;
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
     esp_sleep_enable_timer_wakeup(60*1000000L);
@@ -228,10 +133,12 @@ void loop() {
   Serial.println(first_update);
 
   if (now.tm_min != last_tm_min) {
-    display.init(115200);
-    display.setRotation(3);
-    disp_update(str_date, str_time, (now.tm_min % 5)==0 || first_update);
-    display.hibernate();
+    if (now.tm_min % 5 == 0 || first_update) {
+      display_update_all(str_date, str_time);
+    }
+    else {
+      display_update_time(str_time);
+    }
 
     first_update = 0;
     last_tm_min = now.tm_min;
@@ -279,7 +186,6 @@ void loop() {
     WiFi.mode(WIFI_OFF);
     digitalWrite(NEOPIXEL_POWER, HIGH); // off
     digitalWrite(SPEAKER_SHUTDOWN, LOW); // off
-    display.powerOff();
     digitalWrite(EPD_RESET, LOW); // hardware power down mode
     esp_deep_sleep_start();
   }

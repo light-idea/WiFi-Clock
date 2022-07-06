@@ -274,7 +274,7 @@ int main(int argc, char *argv[]) {
     ptr = &fontName[strlen(fontName)]; // If none, append
   // Insert font size and 7/8 bit.  fontName was alloc'd w/extra
   // space to allow this, we're not sprintfing into Forbidden Zone.
-  sprintf(ptr, "%dpt%db", size, (last > 127) ? 8 : 7);
+  sprintf(ptr, "%dpt%dbGrey", size, (last > 127) ? 8 : 7);
   // Space and punctuation chars in name replaced w/ underscores.
   for (i = 0; (c = fontName[i]); i++) {
     if (isspace(c) || ispunct(c))
@@ -282,14 +282,14 @@ int main(int argc, char *argv[]) {
   }
 
   for (int i = 0; i < levels-1; ++i) {
-    sprintf(fontNameG, "%sGrey%d", fontName, i);
+    sprintf(fontNameG, "%s%d", fontName, i);
     generate(filepath, fontNameG, size, first, last, i);
     printf("\n");
   }
 
   printf("const GFXfont %s[] = {\n", fontName);
   for (int i = 0; i < levels-1; ++i) {
-    printf("  %sGrey%d", fontName, i);
+    printf("  %s%d", fontName, i);
     if (i<levels-2) { printf(",\n"); } 
     else { printf("\n};\n\n"); }
   }

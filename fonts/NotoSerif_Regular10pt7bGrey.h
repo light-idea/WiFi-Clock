@@ -697,7 +697,7 @@ const GFXfont NotoSerif_Regular10pt7bGrey2 PROGMEM = {
 
 // Approx. 2192 bytes
 
-const GFXfont NotoSerif_Regular10pt7b[] = {
+const GFXfont NotoSerif_Regular10pt7bGrey[] = {
   NotoSerif_Regular10pt7bGrey0,
   NotoSerif_Regular10pt7bGrey1,
   NotoSerif_Regular10pt7bGrey2
