@@ -21,6 +21,8 @@ RTC_DATA_ATTR static int last_tm_min;
 static uint8_t btns[DEBOUNCE_STAGES+1] = {0};
 static uint8_t btn;
 
+#define YEAR_2000_US (946684800000L*1000L)
+
 void sync_time() {
   WiFi.mode(WIFI_STA);
   //WiFi.config(IP, GATEWAY, SUBNET, DNS); // Uncomment to use static addresses
@@ -134,17 +136,22 @@ void loop() {
   Serial.print("firstupdate: ");
   Serial.println(first_update);
 
-  if (now.tm_min != last_tm_min) {
-    if (now.tm_min % 5 == 0 || first_update) {
-      display_update_all(str_date, str_time);
-    }
-    else {
-      display_update_time(str_time);
-    }
+  //if (epoch_us < YEAR_2000_US) {
+  //  display_update_error("Unable to sync time!", "");
+  //} 
+  //else {
+    if (now.tm_min != last_tm_min) {
+      if (now.tm_min % 5 == 0 || first_update) {
+        display_update_all(str_date, str_time);
+      }
+      else {
+        display_update_time(str_time);
+      }
 
-    first_update = 0;
-    last_tm_min = now.tm_min;
-  }
+      first_update = 0;
+      last_tm_min = now.tm_min;
+    }
+  //}
 
   gettimeofday(&tv_now, NULL);
   epoch_us = (uint64_t)tv_now.tv_sec*1000000L + (uint64_t)tv_now.tv_usec;

@@ -12,6 +12,7 @@
 
 void display_init();
 void display_clear();
+void display_update_error(char* error, char* time);
 void display_update_all(char* date, char* time);
 void display_update_time(char* time);
 
