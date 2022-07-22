@@ -51,6 +51,8 @@ void setup() {
       break;
   }
 
+  display_init();
+
   if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Not a Wake-up
     first_update = 1;
     // Sync Time over WiFi

@@ -10,6 +10,7 @@
 #define PM_WIDTH 12
 #define PM_HEIGHT 12
 
+void display_init();
 void display_clear();
 void display_update_all(char* date, char* time);
 void display_update_time(char* time);
