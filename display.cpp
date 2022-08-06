@@ -12,8 +12,8 @@
 GxEPD2_BW<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
 
 void display_init() {
-  display.init(115200);
-  display.setRotation(3);
+  display.init(DISPLAY_BAUD);
+  display.setRotation(DISPLAY_R);
 }
 
 void display_clear() {
@@ -92,7 +92,7 @@ void display_update_error(char* error, char* time) {
   do {
     display.fillScreen(GxEPD_WHITE);
     // Error
-    display.fillRect(0, 0, DISPLAY_W, 32, GxEPD_BLACK);
+    display.fillRect(0, 0, DISPLAY_W, DATE_HEIGHT, GxEPD_BLACK);
     display.setTextColor(GxEPD_WHITE);
     display.setFont(&NotoSerif_Regular10pt7b);
     display.setCursor(error_x, error_y);
@@ -118,7 +118,7 @@ void display_update_time(char* time) {
   time_x = (DISPLAY_W/2 - w/2) + TIME_OFFSET_X;
   time_y = DISPLAY_H - PADDING_BOT;
 
-  display.setPartialWindow(0, 32, DISPLAY_W, DISPLAY_H-32);
+  display.setPartialWindow(0, DATE_HEIGHT, DISPLAY_W, TIME_HEIGHT);
   display.firstPage();
   do {
     display.fillScreen(GxEPD_WHITE);
