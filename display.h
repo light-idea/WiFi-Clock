@@ -1,3 +1,6 @@
+#ifndef _DISPLAY_H_
+#define _DISPLAY_H_
+
 #define DISPLAY_BAUD 115200
 
 #define DISPLAY_W 296
@@ -17,7 +20,8 @@
 
 void display_init();
 void display_clear();
-void display_update_error(char* error, char* time);
-void display_update_all(char* date, char* time);
-void display_update_time(char* time);
+void display_update_error(const char* error, const char* time);
+void display_update_all(const char* date, const char* time);
+void display_update_time(const char* time);
 
+#endif

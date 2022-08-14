@@ -3,7 +3,9 @@
 #include <WiFi.h>
 #include <time.h>
 
-#include "config.h"
+#include "cfg.h"
+#include "fatcfg.h"
+
 #include "display.h"
 
 // Peripherals
@@ -23,11 +25,12 @@ static uint8_t btn;
 
 #define YEAR_2000_US (946684800000L*1000L)
 
+/* Initialize CFG_WIFI_NAME, etc. before calling this function. */
 void sync_time() {
   WiFi.mode(WIFI_STA);
   //WiFi.config(IP, GATEWAY, SUBNET, DNS); // Uncomment to use static addresses
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  configTzTime(POSIX_TX, NTP_SERVER1, NTP_SERVER2, NTP_SERVER3);
+  WiFi.begin(CFG_WIFI_NAME, CFG_WIFI_PASS);
+  configTzTime(CFG_POSIX_TZ, CFG_NTP_SERVER);
 }
 
 void setup() {
@@ -56,11 +59,22 @@ void setup() {
   display_init();
 
   if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Not a Wake-up
+    fatcfg_init();
+    if (fatcfg_pc_connected()) {
+      // Configure
+      fatcfg_msc_init();
+      display_update_all("Configuration mode...", "");
+      while(1) { 
+        delay(1000); 
+        if (digitalRead(BUTTON_A)) { break; }
+      } // TODO: button press to escape.
+    }
     first_update = 1;
+    display_update_all("Syncing time...", "");
     // Sync Time over WiFi
+    cfg_init();
     sync_time();
-    evt_us_time_sync_timeout = WIFI_TIMEOUT_US;
-    display_clear();
+    evt_us_time_sync_timeout = CFG_WIFI_TIMEOUT_US;
   }
 
 }
@@ -72,8 +86,6 @@ void loop() {
   char str_date[24]; // Longest date string: "Wednesday, Sep 20, 2019" = 23 chars + \0
   char str_time[6]; // Longest time "12:00" = 5 chars + \0
 
-
-  // Placeholder
   btn = 0;
   if (!digitalRead(BUTTON_A)) { btn |= 0x8; }
   if (!digitalRead(BUTTON_B)) { btn |= 0x4; }
@@ -91,10 +103,10 @@ void loop() {
     Serial.println("Turning on lights.");
     digitalWrite(NEOPIXEL_POWER, LOW); // on
     pixels.begin();
-    pixels.setBrightness(LIGHT1_BRIGHTNESS);
-    pixels.fill(LIGHT1_COLOR);
+    pixels.setBrightness(CFG_LIGHT1_BRIGHTNESS);
+    pixels.fill(CFG_LIGHT1_COLOR);
     pixels.show();
-    evt_us_light_off = epoch_us + LIGHT1_TIMEOUT_US;
+    evt_us_light_off = epoch_us + CFG_LIGHT1_TIMEOUT_US;
   }
 
   if (btn == 0xC) {
@@ -110,27 +122,27 @@ void loop() {
     Serial.println("Turning on lights.");
     digitalWrite(NEOPIXEL_POWER, LOW); // on
     pixels.begin();
-    pixels.setBrightness(LIGHT2_BRIGHTNESS);
-    pixels.fill(LIGHT2_COLOR);
+    pixels.setBrightness(CFG_LIGHT2_BRIGHTNESS);
+    pixels.fill(CFG_LIGHT2_COLOR);
     pixels.show();
-    evt_us_light_off = epoch_us + LIGHT2_TIMEOUT_US;
+    evt_us_light_off = epoch_us + CFG_LIGHT2_TIMEOUT_US;
   }
 
   if (btn == 0x3) {
     Serial.println("Syncing time.");
     sync_time();
-    evt_us_time_sync_timeout = epoch_us + WIFI_TIMEOUT_US;
+    evt_us_time_sync_timeout = epoch_us + CFG_WIFI_TIMEOUT_US;
   }
 
   /* Update Time */
 
   getLocalTime(&now, 0);
   strftime(str_date, sizeof(str_date), "%A, %b %e %G", &now);
-  if (HOUR_12_24_N) {
-    strftime(str_time, sizeof(str_time), "%l:%M", &now);
+  if (CFG_24_HOUR) {
+    strftime(str_time, sizeof(str_time), "%I:%M", &now);
   }
   else {
-    strftime(str_time, sizeof(str_time), "%I:%M", &now);
+    strftime(str_time, sizeof(str_time), "%l:%M", &now);
   }
 
   Serial.print("firstupdate: ");

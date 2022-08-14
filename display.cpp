@@ -6,7 +6,7 @@
 #include "fonts/NotoSerif_Regular56pt7b.h"
 
 #include "display.h"
-#include "config.h"
+#include "cfg.h"
 
 // Peripherals
 GxEPD2_BW<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
@@ -20,7 +20,7 @@ void display_clear() {
   display.clearScreen();
 }
 
-void display_update_all(char* date, char* time) {
+void display_update_all(const char* date, const char* time) {
   int16_t x, y;
   uint16_t w, h;
   int16_t date_x, date_y, time_x, time_y;
@@ -67,14 +67,14 @@ void display_update_all(char* date, char* time) {
     display.setFont(&NotoSerif_Regular56pt7b);
     display.setCursor(time_x, time_y);
     display.print(time);
-    if (HOUR_12_24_N) {
+    if (!CFG_24_HOUR) {
       display.fillRect(DISPLAY_W-PM_WIDTH, DISPLAY_H-PM_HEIGHT, 
                             PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }
   } while (display.nextPage());
 }
 
-void display_update_error(char* error, char* time) {
+void display_update_error(const char* error, const char* time) {
   int16_t x, y;
   uint16_t w, h;
   int16_t error_x, error_y, time_x, time_y;
@@ -102,14 +102,14 @@ void display_update_error(char* error, char* time) {
     display.setFont(&NotoSerif_Regular56pt7b);
     display.setCursor(time_x, time_y);
     display.print(time);
-    if (HOUR_12_24_N && time != "") {
+    if (!CFG_24_HOUR && time != "") {
       display.fillRect(DISPLAY_W-PM_WIDTH, DISPLAY_H-PM_HEIGHT, 
                             PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }
   } while (display.nextPage());
 }
 
-void display_update_time(char* time) {
+void display_update_time(const char* time) {
   int16_t x, y;
   uint16_t w, h;
   int16_t time_x, time_y;
@@ -126,7 +126,7 @@ void display_update_time(char* time) {
     display.setFont(&NotoSerif_Regular56pt7b);
     display.setCursor(time_x, time_y);
     display.print(time);
-    if (HOUR_12_24_N) {
+    if (!CFG_24_HOUR) {
       display.fillRect(DISPLAY_W-PM_WIDTH, DISPLAY_H-PM_HEIGHT, 
                       PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }
