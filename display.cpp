@@ -20,7 +20,7 @@ void display_clear() {
   display.clearScreen();
 }
 
-void display_update_all(const char* date, const char* time) {
+void display_update_all(const char* date, const char* time, bool pm) {
   int16_t x, y;
   uint16_t w, h;
   int16_t date_x, date_y, time_x, time_y;
@@ -67,14 +67,14 @@ void display_update_all(const char* date, const char* time) {
     display.setFont(&NotoSerif_Regular56pt7b);
     display.setCursor(time_x, time_y);
     display.print(time);
-    if (!CFG_24_HOUR) {
+    if (pm) {
       display.fillRect(DISPLAY_W-PM_WIDTH, DISPLAY_H-PM_HEIGHT, 
                             PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }
   } while (display.nextPage());
 }
 
-void display_update_error(const char* error, const char* time) {
+void display_update_error(const char* error, const char* time, bool pm) {
   int16_t x, y;
   uint16_t w, h;
   int16_t error_x, error_y, time_x, time_y;
@@ -102,14 +102,14 @@ void display_update_error(const char* error, const char* time) {
     display.setFont(&NotoSerif_Regular56pt7b);
     display.setCursor(time_x, time_y);
     display.print(time);
-    if (!CFG_24_HOUR && time != "") {
+    if (pm) {
       display.fillRect(DISPLAY_W-PM_WIDTH, DISPLAY_H-PM_HEIGHT, 
                             PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }
   } while (display.nextPage());
 }
 
-void display_update_time(const char* time) {
+void display_update_time(const char* time, bool pm) {
   int16_t x, y;
   uint16_t w, h;
   int16_t time_x, time_y;
@@ -126,7 +126,7 @@ void display_update_time(const char* time) {
     display.setFont(&NotoSerif_Regular56pt7b);
     display.setCursor(time_x, time_y);
     display.print(time);
-    if (!CFG_24_HOUR) {
+    if (pm) {
       display.fillRect(DISPLAY_W-PM_WIDTH, DISPLAY_H-PM_HEIGHT, 
                       PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }

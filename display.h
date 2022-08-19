@@ -20,8 +20,8 @@
 
 void display_init();
 void display_clear();
-void display_update_error(const char* error, const char* time);
-void display_update_all(const char* date, const char* time);
-void display_update_time(const char* time);
+void display_update_error(const char* error, const char* time, bool pm);
+void display_update_all(const char* date, const char* time, bool pm);
+void display_update_time(const char* time, bool pm);
 
 #endif
