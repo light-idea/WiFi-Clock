@@ -179,19 +179,22 @@ void loop() {
     if (now.tm_hour >= 12) pm = true;
   }
 
-  if (curr_day != last_day || curr_min % 5 == 0) {
-    if (flags & (FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC)) {
-      display_update_error(str_date, str_time, pm);
+  if (epoch_us > evt_us_disp_redraw) {
+    if (curr_day != last_day || (curr_min != last_min && curr_min % 5 == 0)) {
+      if (flags & (FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC)) {
+        display_update_error(str_date, str_time, pm);
+      }
+      else {
+        display_update_all(str_date, str_time, pm);
+      }
+      last_day = curr_day;
+      last_min = curr_min;
     }
-    else {
-      display_update_all(str_date, str_time, pm);
+    else if (curr_min != last_min) {
+      display_update_time(str_time, pm);
+      last_day = curr_day;
+      last_min = curr_min;
     }
-    last_day = curr_day;
-    last_min = curr_min;
-  }
-  else if (curr_min != last_min) {
-    display_update_time(str_time, pm);
-    last_min = curr_min;
   }
 
   gettimeofday(&tv_now, NULL);
@@ -223,27 +226,17 @@ void loop() {
   }
   uint64_t sleep_us = evt_next - epoch_us;
 
-#ifdef SLEEP_ENABLE
-  //esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON); // needed to keep button pullups enabled, NEOPIXEL_POWER HIGH
-  esp_sleep_enable_ext0_wakeup(GPIO_NUM_15, 0); // Wake on button A press
-  esp_sleep_enable_ext1_wakeup(1<<11, ESP_EXT1_WAKEUP_ALL_LOW); // Wake on button D press
-  esp_sleep_enable_timer_wakeup(sleep_us); // Enter sleep until next event
-  if (epoch_us < evt_us_time_sync_timeout || // waiting for time sync or light off
-      epoch_us < evt_us_light_off) {
+  if (fatcfg_pc_connected() || flags & FLAG_SYNCING) {
+    btn = btn_read();
+    if (btn) delay(DEBOUNCE_US/1000);
+    else delay(1);
+  }
+  else { // Sleep
+    //esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON); // needed to keep button pullups enabled, NEOPIXEL_POWER HIGH
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_15, 0); // Wake on button A press
+    esp_sleep_enable_ext1_wakeup(1<<11, ESP_EXT1_WAKEUP_ALL_LOW); // Wake on button D press
+    esp_sleep_enable_timer_wakeup(sleep_us); // Enter sleep until next event
+    digitalWrite(SPEAKER_SHUTDOWN, LOW); // off
     esp_light_sleep_start();
   }
-  else { // Deep Sleep
-    WiFi.mode(WIFI_OFF);
-    digitalWrite(NEOPIXEL_POWER, HIGH); // off
-    digitalWrite(SPEAKER_SHUTDOWN, LOW); // off
-    digitalWrite(EPD_RESET, LOW); // hardware power down mode
-    esp_deep_sleep_start();
-  }
-#else
-  uint64_t delay_ms = (evt_next - epoch_us) / 1000;
-  uint64_t delay_us = (evt_next - epoch_us) % 1000;
-  delay(delay_ms);
-  delayMicroseconds(delay_us);
-#endif
-
 }

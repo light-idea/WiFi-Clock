@@ -1,7 +1,6 @@
 #include "fatcfg.h"
 #include "cfg.h"
 
-// Only need to be read on startup.
 char CFG_WIFI_NAME[33];
 char CFG_WIFI_PASS[65];
 char CFG_NTP_SERVER[256];

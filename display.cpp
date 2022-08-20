@@ -17,7 +17,11 @@ void display_init() {
 }
 
 void display_clear() {
-  display.clearScreen();
+  display.setFullWindow();
+  display.firstPage();
+  do {
+    display.fillScreen(GxEPD_WHITE);
+  } while (display.nextPage());
 }
 
 void display_update_all(const char* date, const char* time, bool pm) {
