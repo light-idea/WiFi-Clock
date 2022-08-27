@@ -11,8 +11,8 @@
 // Peripherals
 GxEPD2_BW<GxEPD2_290_T5, GxEPD2_290_T5::HEIGHT> display(GxEPD2_290_T5(8, 7, 6, 5)); // GDEW029T5
 
-void display_init() {
-  display.init(DISPLAY_BAUD);
+void display_init(bool initial) {
+  display.init(DISPLAY_BAUD, initial); // initial prevents full-refresh after deep sleep
   display.setRotation(DISPLAY_R);
 }
 
@@ -22,6 +22,7 @@ void display_clear() {
   do {
     display.fillScreen(GxEPD_WHITE);
   } while (display.nextPage());
+  display.powerOff();
 }
 
 void display_update_all(const char* date, const char* time, bool pm) {
@@ -76,6 +77,7 @@ void display_update_all(const char* date, const char* time, bool pm) {
                             PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }
   } while (display.nextPage());
+  display.powerOff();
 }
 
 void display_update_error(const char* error, const char* time, bool pm) {
@@ -111,6 +113,7 @@ void display_update_error(const char* error, const char* time, bool pm) {
                             PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }
   } while (display.nextPage());
+  display.powerOff();
 }
 
 void display_update_time(const char* time, bool pm) {
@@ -135,5 +138,6 @@ void display_update_time(const char* time, bool pm) {
                       PM_WIDTH, PM_HEIGHT, GxEPD_BLACK);
     }
   } while (display.nextPage());
+  display.powerOff();
 }
 

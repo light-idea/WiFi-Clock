@@ -73,23 +73,35 @@ void setup() {
       break;
   }
 
-  display_init();
 
-  
   if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Startup
     // Configure
     fatcfg_init();
-    if (fatcfg_pc_connected()) {
+    display_init(true);
+
+    // 1. Check for Button Press
+    btn = btn_read();
+    if (btn) {
       // Configure
       fatcfg_msc_init();
       display_update_all("Configuration mode...", "", false);
-      while(1) { 
+      while (1) { // 2. Wait for button release
         btn = btn_read();
-        if (btn) {
+        if (btn == 0) {
           delay(DEBOUNCE_US/1000);
           btn = btn_read();
-          if (btn) break;
+          if (btn == 0) break;
         }
+        delay(DEBOUNCE_US/1000);
+      }
+      while (1) { // 3. Wait for Button Press
+        btn = btn_read();
+        if (btn != 0) {
+          delay(DEBOUNCE_US/1000);
+          btn = btn_read();
+          if (btn != 0) break;
+        }
+        delay(DEBOUNCE_US/1000);
       }
     }
     // Sync Time over WiFi
@@ -98,6 +110,11 @@ void setup() {
     flags |= FLAG_SYNCING;
     flags &= ~(FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC);
     evt_us_time_sync_timeout = 0 + CFG_WIFI_TIMEOUT_US;
+  }
+  else {
+    display_init(false);
+    setenv("TZ", CFG_POSIX_TZ, 1);
+    tzset(); // save the TZ variable
   }
 
 }
@@ -226,7 +243,7 @@ void loop() {
   }
   uint64_t sleep_us = evt_next - epoch_us;
 
-  if (fatcfg_pc_connected() || flags & FLAG_SYNCING) {
+  if (flags & FLAG_SYNCING) {
     btn = btn_read();
     if (btn) delay(DEBOUNCE_US/1000);
     else delay(1);
@@ -237,6 +254,15 @@ void loop() {
     esp_sleep_enable_ext1_wakeup(1<<11, ESP_EXT1_WAKEUP_ALL_LOW); // Wake on button D press
     esp_sleep_enable_timer_wakeup(sleep_us); // Enter sleep until next event
     digitalWrite(SPEAKER_SHUTDOWN, LOW); // off
-    esp_light_sleep_start();
+    if (epoch_us < evt_us_light_off) {
+      esp_light_sleep_start();
+    }
+    else {
+      // ePaper display does not update properly after deep sleep
+      //esp_deep_sleep_start();
+      esp_light_sleep_start();
+    }
+    if (btn) delay(DEBOUNCE_US/1000);
   }
 }
+

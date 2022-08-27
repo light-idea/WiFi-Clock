@@ -18,7 +18,7 @@
 #define DATE_HEIGHT 32
 #define TIME_HEIGHT (DISPLAY_H-DATE_HEIGHT)
 
-void display_init();
+void display_init(bool initial=true);
 void display_clear();
 void display_update_error(const char* error, const char* time, bool pm);
 void display_update_all(const char* date, const char* time, bool pm);

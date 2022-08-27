@@ -118,10 +118,6 @@ void fatcfg_msc_init() {
   usb_msc.begin();
 }
 
-bool fatcfg_pc_connected() {
-  return tud_ready();
-}
-
 void fatcfg_get_string(char* buf, const char* fname, const char* fallback) {
   File f = fatfs.open(fname, FILE_READ);
   if (!f || !f.available()) {
