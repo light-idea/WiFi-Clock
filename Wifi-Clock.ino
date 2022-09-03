@@ -77,6 +77,7 @@ void setup() {
   if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Startup
     // Configure
     fatcfg_init();
+    cfg_init();
     display_init(true);
 
     // 1. Check for Button Press

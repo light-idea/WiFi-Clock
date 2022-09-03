@@ -118,18 +118,65 @@ void fatcfg_msc_init() {
   usb_msc.begin();
 }
 
-void fatcfg_get_string(char* buf, const char* fname, const char* fallback) {
+void fatcfg_get_string(char* buf, int maxchars, const char* fname, const char* fallback) {
   File f = fatfs.open(fname, FILE_READ);
   if (!f || !f.available()) {
     File f = fatfs.open(fname, FILE_WRITE);
     f.println(fallback);
     f.close();
+    fatcfg_get_string(buf, maxchars, fname, fallback);
     return;
   }
   int i = 0;
-  do {
+  while(f.available() && i < maxchars-1) { // Read first line
     char c = f.read();
     if (c == '\r' || c == '\n' || c == '\0') { break; }
     buf[i++] = c;
-  } while (f.available());
+  }
+  buf[i] = '\0';
+  f.close();
+  return;
 }
+
+bool fatcfg_get_bool(const char* fname, const char* fallback) {
+  char buf[8];
+  File f = fatfs.open(fname, FILE_READ);
+  if (!f || !f.available()) {
+    File f = fatfs.open(fname, FILE_WRITE);
+    f.println(fallback);
+    f.close();
+    return fatcfg_get_bool(fname, fallback);
+  }
+  char c;
+  while (f.available()) { // Read first non-whitespace character
+    c = f.read();
+    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') { continue; }
+    else { break; }
+  }
+  f.close();
+  if (c == '1' || c == 't' || c == 'T' || c == 'y' || c == 'Y') {
+    return true;
+  }
+  return false;
+}
+
+uint64_t fatcfg_get_num(const char* fname, const char* fallback) {
+  char buf[24];
+  File f = fatfs.open(fname, FILE_READ);
+  if (!f || !f.available()) {
+    File f = fatfs.open(fname, FILE_WRITE);
+    f.println(fallback);
+    f.close();
+    return fatcfg_get_num(fname, fallback);
+  }
+  int i = 0;
+  while(f.available() && i < 24-1) { // Read first line
+    char c = f.read();
+    if (c == '\r' || c == '\n' || c == '\0') { break; }
+    buf[i++] = c;
+  }
+  buf[i] = '\0';
+  return strtoul(buf, NULL, 0);
+}
+
+
