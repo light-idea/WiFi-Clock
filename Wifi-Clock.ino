@@ -190,7 +190,7 @@ void loop() {
     strcpy(str_time, "");
   }
   else if (CFG_24_HOUR) { curr_min = now.tm_min;
-    strftime(str_time, sizeof(str_time), "%I:%M", &now);
+    strftime(str_time, sizeof(str_time), "%H:%M", &now);
   }
   else { curr_min = now.tm_min;
     strftime(str_time, sizeof(str_time), "%l:%M", &now);
