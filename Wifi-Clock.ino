@@ -10,6 +10,7 @@
 
 #define DEBOUNCE_US 5000L
 #define YEAR_2000_US (946684800000L*1000L)
+#define HOURS_24_US (12L*60L*60L*1000000L)
 
 /* Peripherals */
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
@@ -29,6 +30,7 @@ RTC_DATA_ATTR static uint64_t evt_us_disp_redraw = 0;
 /* Display */
 RTC_DATA_ATTR static int last_min = INT_MIN;
 RTC_DATA_ATTR static int last_day = INT_MIN;
+RTC_DATA_ATTR static uint64_t last_us_time_sync = YEAR_2000_US;
 
 /* Initialize CFG_WIFI_NAME, etc. before calling this function. */
 void sync_time() {
@@ -160,12 +162,13 @@ void loop() {
     pixels.show();
     evt_us_light_off = epoch_us + CFG_LIGHT2_TIMEOUT_US;
   }
-  if (btn == 0x3) {
+  if (btn == 0x3 || epoch_us > last_us_time_sync+HOURS_24_US) { // Sync time
     cfg_init();
     sync_time();
     flags |= FLAG_SYNCING;
     flags &= ~(FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC);
     evt_us_time_sync_timeout = epoch_us + CFG_WIFI_TIMEOUT_US;
+    if (epoch_us > YEAR_2000_US) { last_us_time_sync = epoch_us + CFG_WIFI_TIMEOUT_US; }
   }
 
   /* Update Time */
