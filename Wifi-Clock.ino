@@ -9,16 +9,20 @@
 #include "display.h"
 
 #define DEBOUNCE_US 5000L
-#define YEAR_2000_US (946684800000L*1000L)
-#define HOURS_24_US (12L*60L*60L*1000000L)
+#define YEAR_2000_US (946684800000000)
+#define HOURS_24_US (86400000000)
+#define WIFI_POWEROFF_US (3000000L)
 
 /* Peripherals */
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
 
 /* Flags */
 #define FLAG_SYNCING       0x01
-#define FLAG_ERR_WIFI_CONN 0x02
-#define FLAG_ERR_TIME_SYNC 0x04
+#define FLAG_LIGHT1        0x02
+#define FLAG_LIGHT2        0x04
+#define FLAG_CLEAR_DISP    0x08
+#define FLAG_ERR_WIFI_CONN 0x10
+#define FLAG_ERR_TIME_SYNC 0x20
 RTC_DATA_ATTR static uint8_t flags;
 
 /* Events */
@@ -30,14 +34,19 @@ RTC_DATA_ATTR static uint64_t evt_us_disp_redraw = 0;
 /* Display */
 RTC_DATA_ATTR static int last_min = INT_MIN;
 RTC_DATA_ATTR static int last_day = INT_MIN;
-RTC_DATA_ATTR static uint64_t last_us_time_sync = YEAR_2000_US;
+RTC_DATA_ATTR static uint64_t last_us_time_sync = 0;
 
-/* Initialize CFG_WIFI_NAME, etc. before calling this function. */
-void sync_time() {
-  WiFi.mode(WIFI_STA);
-  //WiFi.config(IP, GATEWAY, SUBNET, DNS); // Uncomment to use static addresses
-  WiFi.begin(CFG_WIFI_NAME, CFG_WIFI_PASS);
-  configTzTime(CFG_POSIX_TZ, CFG_NTP_SERVER);
+const char* wl_status_to_string(wl_status_t status) {
+  switch (status) {
+    case WL_NO_SHIELD: return "WL_NO_SHIELD";
+    case WL_IDLE_STATUS: return "WL_IDLE_STATUS";
+    case WL_NO_SSID_AVAIL: return "WL_NO_SSID_AVAIL";
+    case WL_SCAN_COMPLETED: return "WL_SCAN_COMPLETED";
+    case WL_CONNECTED: return "WL_CONNECTED";
+    case WL_CONNECT_FAILED: return "WL_CONNECT_FAILED";
+    case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
+    case WL_DISCONNECTED: return "WL_DISCONNECTED";
+  }
 }
 
 uint8_t btn_read() {
@@ -53,15 +62,14 @@ void setup() {
   uint8_t btn;
   esp_sleep_wakeup_cause_t wakeup_reason;
 
-  flags = 0;
-
-  pinMode(NEOPIXEL_POWER, OUTPUT);
   pinMode(BUTTON_A, INPUT_PULLUP);
   pinMode(BUTTON_B, INPUT_PULLUP);
   pinMode(BUTTON_C, INPUT_PULLUP);
   pinMode(BUTTON_D, INPUT_PULLUP);
+  pinMode(NEOPIXEL_POWER, OUTPUT);
   rtc_gpio_pullup_en(GPIO_NUM_15); // Button A
   rtc_gpio_pullup_en(GPIO_NUM_11); // Button D
+  flags = 0;
 
   wakeup_reason = esp_sleep_get_wakeup_cause();
 
@@ -75,11 +83,10 @@ void setup() {
       break;
   }
 
-
   if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Startup
     // Configure
     fatcfg_init();
-    cfg_init();
+    cfg_init(); // Create config files
     display_init(true);
 
     // 1. Check for Button Press
@@ -107,19 +114,25 @@ void setup() {
         delay(DEBOUNCE_US/1000);
       }
     }
+
+    cfg_init(); // Read config files
     // Sync Time over WiFi
-    cfg_init();
-    sync_time();
-    flags |= FLAG_SYNCING;
-    flags &= ~(FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC);
     evt_us_time_sync_timeout = 0 + CFG_WIFI_TIMEOUT_US;
+    WiFi.setAutoReconnect(false);
+    WiFi.begin(CFG_WIFI_NAME, CFG_WIFI_PASS);
+    configTzTime(CFG_POSIX_TZ, CFG_NTP_SERVER);
+    flags &= ~(FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC);
+    flags |= FLAG_SYNCING;
   }
-  else {
+  else { // Deep-Sleep
     display_init(false);
     setenv("TZ", CFG_POSIX_TZ, 1);
     tzset(); // save the TZ variable
   }
 
+  Serial.begin(115200);
+  delay(10);
+  Serial.println("Starting WiFi clock.");
 }
 
 void loop() {
@@ -136,71 +149,126 @@ void loop() {
   int curr_day;
   bool pm;
 
-  /* Event Start */
-
-  btn = btn_read();
   gettimeofday(&tv_now, NULL);
   epoch_us = (uint64_t)tv_now.tv_sec*1000000L + (uint64_t)tv_now.tv_usec;
 
-  if (btn == 0x8) { // Turn on lights
-    digitalWrite(NEOPIXEL_POWER, LOW); // on
-    pixels.begin();
-    pixels.setBrightness(CFG_LIGHT1_BRIGHTNESS);
-    pixels.fill(CFG_LIGHT1_COLOR);
-    pixels.show();
-    evt_us_light_off = epoch_us + CFG_LIGHT1_TIMEOUT_US;
+  /* Event End */
+
+  if (epoch_us > evt_us_light_off) {
+    if (flags & (FLAG_LIGHT1|FLAG_LIGHT2)) {
+      Serial.print(epoch_us);
+      Serial.println(" evt end: light ");
+      pixels.clear();
+      digitalWrite(NEOPIXEL_POWER, HIGH); // off
+      flags &= ~(FLAG_LIGHT1|FLAG_LIGHT2);
+    }
   }
-  if (btn == 0xC) { // Clear screen for 1 minute (
-    display_clear();
-    evt_us_disp_redraw = epoch_us + 60*1000000L;
+  if (epoch_us > evt_us_disp_redraw) {
+    if (flags & FLAG_CLEAR_DISP) {
+      Serial.print(epoch_us);
+      Serial.println(" evt end: clear ");
+      flags &= ~(FLAG_CLEAR_DISP);
+    }
+  }
+  if (epoch_us > evt_us_time_sync_timeout) {
+    if (flags & FLAG_SYNCING) {
+      Serial.print(epoch_us);
+      Serial.println(" evt end: timesync ");
+      Serial.println(wl_status_to_string(WiFi.status()));
+      last_us_time_sync = (epoch_us + WIFI_POWEROFF_US); // +3s to allow WiFi to turn off, before syncing again
+      if (WiFi.status() != WL_CONNECTED) { flags |= FLAG_ERR_WIFI_CONN; }
+      if (epoch_us < YEAR_2000_US)       { flags |= FLAG_ERR_TIME_SYNC; }
+      WiFi.disconnect(true);
+      flags &= ~(FLAG_SYNCING);
+    }
+  }
+
+  /* Event Start */
+
+  btn = btn_read();
+
+  if (btn == 0x8) { // Turn on lights
+    if (!(flags & FLAG_LIGHT1)) {
+      Serial.print(epoch_us);
+      Serial.println(" evt start: light1 ");
+      evt_us_light_off = epoch_us + CFG_LIGHT1_TIMEOUT_US;
+      digitalWrite(NEOPIXEL_POWER, LOW); // on
+      pixels.begin();
+      pixels.setBrightness(CFG_LIGHT1_BRIGHTNESS);
+      pixels.fill(CFG_LIGHT1_COLOR);
+      pixels.show();
+      flags &= ~(FLAG_LIGHT1|FLAG_LIGHT2);
+      flags |= FLAG_LIGHT1;
+    }
   }
   if (btn == 0x1) { // Turn on lights
-    digitalWrite(NEOPIXEL_POWER, LOW); // on
-    pixels.begin();
-    pixels.setBrightness(CFG_LIGHT2_BRIGHTNESS);
-    pixels.fill(CFG_LIGHT2_COLOR);
-    pixels.show();
-    evt_us_light_off = epoch_us + CFG_LIGHT2_TIMEOUT_US;
+    if (!(flags & FLAG_LIGHT2)) {
+      Serial.print(epoch_us);
+      Serial.println(" evt start: light2 ");
+      evt_us_light_off = epoch_us + CFG_LIGHT2_TIMEOUT_US;
+      digitalWrite(NEOPIXEL_POWER, LOW); // on
+      pixels.begin();
+      pixels.setBrightness(CFG_LIGHT2_BRIGHTNESS);
+      pixels.fill(CFG_LIGHT2_COLOR);
+      pixels.show();
+      flags &= ~(FLAG_LIGHT1|FLAG_LIGHT2);
+      flags |= FLAG_LIGHT2;
+    }
   }
-  if (btn == 0x3 || epoch_us > last_us_time_sync+HOURS_24_US) { // Sync time
-    cfg_init();
-    sync_time();
-    flags |= FLAG_SYNCING;
-    flags &= ~(FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC);
-    evt_us_time_sync_timeout = epoch_us + CFG_WIFI_TIMEOUT_US;
-    if (epoch_us > YEAR_2000_US) { last_us_time_sync = epoch_us + CFG_WIFI_TIMEOUT_US; }
+  if (btn == 0xC) { // Clear screen for 1 minute (
+    if (!(flags & FLAG_CLEAR_DISP)) {
+      Serial.print(epoch_us);
+      Serial.println(" evt start: clear ");
+      evt_us_disp_redraw = epoch_us + 60*1000000L;
+      display_clear();
+      last_min = INT_MIN; // Force full update
+      flags |= FLAG_CLEAR_DISP;
+    }
   }
-
-  /* Update Time */
-
-  getLocalTime(&now, 0);
-  pm = false;
-  // Date
-  if (flags & FLAG_ERR_WIFI_CONN) { curr_day = -1;
-    strcpy(str_date, "No WiFi connection!");
-  }
-  else if (flags & FLAG_ERR_TIME_SYNC) { curr_day = -2;
-    strcpy(str_date, "Unable to sync time!");
-  }
-  else if (flags & FLAG_SYNCING) { curr_day = -3;
-    strcpy(str_date, "Syncing time...");
-  }
-  else { curr_day = now.tm_yday;
-    strftime(str_date, sizeof(str_date), "%A, %b %e %G", &now);
-  }
-  // Time
-  if (epoch_us < YEAR_2000_US) { curr_min = -1;
-    strcpy(str_time, "");
-  }
-  else if (CFG_24_HOUR) { curr_min = now.tm_min;
-    strftime(str_time, sizeof(str_time), "%H:%M", &now);
-  }
-  else { curr_min = now.tm_min;
-    strftime(str_time, sizeof(str_time), "%l:%M", &now);
-    if (now.tm_hour >= 12) pm = true;
+  if (btn == 0x3 || epoch_us > (last_us_time_sync+HOURS_24_US)) { // Sync time
+    if (!(flags & FLAG_SYNCING)) {
+      Serial.print(epoch_us);
+      Serial.println(" evt start: timesync ");
+      evt_us_time_sync_timeout = epoch_us + CFG_WIFI_TIMEOUT_US;
+      WiFi.begin(CFG_WIFI_NAME, CFG_WIFI_PASS);
+      WiFi.reconnect();
+      configTzTime(CFG_POSIX_TZ, CFG_NTP_SERVER);
+      flags &= ~(FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC);
+      flags |= FLAG_SYNCING;
+    }
   }
 
-  if (epoch_us > evt_us_disp_redraw) {
+  /* Update Display */
+
+  if (!(flags & FLAG_CLEAR_DISP)) {
+    getLocalTime(&now, 0);
+    pm = false;
+
+    // Date
+    if (flags & FLAG_SYNCING) { curr_day = -1;
+      strcpy(str_date, "Syncing time...");
+    }
+    else if (flags & FLAG_ERR_WIFI_CONN) { curr_day = -2;
+      strcpy(str_date, "No WiFi connection!");
+    }
+    else if (flags & FLAG_ERR_TIME_SYNC) { curr_day = -3;
+      strcpy(str_date, "Unable to sync time!");
+    }
+    else { curr_day = now.tm_yday;
+      strftime(str_date, sizeof(str_date), "%A, %b %e %G", &now);
+    }
+    // Time
+    if (epoch_us < YEAR_2000_US) { curr_min = -1;
+      strcpy(str_time, "");
+    }
+    else if (CFG_24_HOUR) { curr_min = now.tm_min;
+      strftime(str_time, sizeof(str_time), "%H:%M", &now);
+    }
+    else { curr_min = now.tm_min;
+      strftime(str_time, sizeof(str_time), "%l:%M", &now);
+      if (now.tm_hour >= 12) pm = true;
+    }
+
     if (curr_day != last_day || (curr_min != last_min && curr_min % 5 == 0)) {
       if (flags & (FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC)) {
         display_update_error(str_date, str_time, pm);
@@ -220,21 +288,6 @@ void loop() {
 
   gettimeofday(&tv_now, NULL);
   epoch_us = (uint64_t)tv_now.tv_sec*1000000L + (uint64_t)tv_now.tv_usec;
-
-  /* Event End */
-
-  if (epoch_us > evt_us_light_off) {
-    pixels.clear();
-    digitalWrite(NEOPIXEL_POWER, HIGH); // off
-  }
-  if (epoch_us > evt_us_time_sync_timeout) {
-    if (flags & FLAG_SYNCING) {
-      if (WiFi.status() != WL_CONNECTED) { flags |= FLAG_ERR_WIFI_CONN; }
-      if (epoch_us < YEAR_2000_US)       { flags |= FLAG_ERR_TIME_SYNC; }
-    }
-    flags &= ~(FLAG_SYNCING);
-    WiFi.mode(WIFI_OFF);
-  }
 
   /* Sleep */
 

@@ -5,9 +5,9 @@
 
 const uint64_t CFG_WIFI_TIMEOUT_US = 60*1000000L;
 
-extern char CFG_WIFI_NAME[33];
-extern char CFG_WIFI_PASS[65];
-extern char CFG_NTP_SERVER[256];
+extern RTC_DATA_ATTR char CFG_WIFI_NAME[33];
+extern RTC_DATA_ATTR char CFG_WIFI_PASS[65];
+extern RTC_DATA_ATTR char CFG_NTP_SERVER[256];
 extern RTC_DATA_ATTR char CFG_POSIX_TZ[256];
 extern RTC_DATA_ATTR bool CFG_24_HOUR;
 extern RTC_DATA_ATTR uint32_t CFG_LIGHT1_COLOR;
