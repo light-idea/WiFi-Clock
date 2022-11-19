@@ -8,10 +8,10 @@
 
 #include "display.h"
 
-#define DEBOUNCE_US 5000L
-#define YEAR_2000_US (946684800000000)
-#define HOURS_24_US (86400000000)
-#define WIFI_POWEROFF_US (3000000L)
+#define DEBOUNCE_US (5000UL)
+#define YEAR_2000_US (946684800000000UL)
+#define HOURS_24_US (86400000000UL)
+#define WIFI_POWEROFF_US (3000000UL)
 
 /* Peripherals */
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
@@ -79,7 +79,9 @@ void setup() {
       esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
       esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
       esp_sleep_enable_timer_wakeup(DEBOUNCE_US); // Debounce
-      esp_deep_sleep_start();
+      // ePaper display does not update properly after deep sleep
+      //esp_deep_sleep_start();
+      esp_light_sleep_start();
       break;
   }
 
@@ -150,7 +152,7 @@ void loop() {
   bool pm;
 
   gettimeofday(&tv_now, NULL);
-  epoch_us = (uint64_t)tv_now.tv_sec*1000000L + (uint64_t)tv_now.tv_usec;
+  epoch_us = (uint64_t)tv_now.tv_sec*1000000UL + (uint64_t)tv_now.tv_usec;
 
   /* Event End */
 
@@ -219,7 +221,7 @@ void loop() {
     if (!(flags & FLAG_CLEAR_DISP)) {
       Serial.print(epoch_us);
       Serial.println(" evt start: clear ");
-      evt_us_disp_redraw = epoch_us + 60*1000000L;
+      evt_us_disp_redraw = epoch_us + 60*1000000UL;
       display_clear();
       last_min = INT_MIN; // Force full update
       flags |= FLAG_CLEAR_DISP;
@@ -287,11 +289,11 @@ void loop() {
   }
 
   gettimeofday(&tv_now, NULL);
-  epoch_us = (uint64_t)tv_now.tv_sec*1000000L + (uint64_t)tv_now.tv_usec;
+  epoch_us = (uint64_t)tv_now.tv_sec*1000000UL + (uint64_t)tv_now.tv_usec;
 
   /* Sleep */
 
-  uint64_t evt_next = epoch_us + (60*1000000L) - (epoch_us % (60*1000000L)); // next display update
+  uint64_t evt_next = epoch_us + (60*1000000UL) - (epoch_us % (60*1000000UL)); // next display update
   if (evt_us_light_off         > epoch_us && evt_next > evt_us_light_off) {
     evt_next = evt_us_light_off;
   }
