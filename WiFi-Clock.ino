@@ -1,12 +1,15 @@
 #include <driver/rtc_io.h>
+#include <esp_wifi.h>
+#include <time.h>
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
-#include <time.h>
 
 #include "cfg.h"
 #include "fatcfg.h"
 
 #include "display.h"
+
+#undef DEBUG
 
 #define DEBOUNCE_US (5000UL)
 #define YEAR_2000_US (946684800000000UL)
@@ -38,15 +41,27 @@ RTC_DATA_ATTR static uint64_t last_us_time_sync = 0;
 
 const char* wl_status_to_string(wl_status_t status) {
   switch (status) {
-    case WL_NO_SHIELD: return "WL_NO_SHIELD";
-    case WL_IDLE_STATUS: return "WL_IDLE_STATUS";
-    case WL_NO_SSID_AVAIL: return "WL_NO_SSID_AVAIL";
-    case WL_SCAN_COMPLETED: return "WL_SCAN_COMPLETED";
-    case WL_CONNECTED: return "WL_CONNECTED";
-    case WL_CONNECT_FAILED: return "WL_CONNECT_FAILED";
-    case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
-    case WL_DISCONNECTED: return "WL_DISCONNECTED";
+    case WL_NO_SHIELD: return "NO_SHIELD";
+    case WL_IDLE_STATUS: return "IDLE_STATUS";
+    case WL_NO_SSID_AVAIL: return "NO_SSID_AVAIL";
+    case WL_SCAN_COMPLETED: return "SCAN_COMPLETED";
+    case WL_CONNECTED: return "CONNECTED";
+    case WL_CONNECT_FAILED: return "CONNECT_FAILED";
+    case WL_CONNECTION_LOST: return "CONNECTION_LOST";
+    case WL_DISCONNECTED: return "DISCONNECTED";
   }
+  return "INVALID";
+}
+
+void network_connect() {
+  WiFi.enableSTA(true);
+  WiFi.mode(WIFI_STA);
+  delay(10);
+  WiFi.begin(CFG_WIFI_NAME, CFG_WIFI_PASS);
+  delay(10);
+  configTzTime(CFG_POSIX_TZ, CFG_NTP_SERVER);
+  delay(10);
+  return;
 }
 
 uint8_t btn_read() {
@@ -71,21 +86,21 @@ void setup() {
   rtc_gpio_pullup_en(GPIO_NUM_11); // Button D
   flags = 0;
 
-  wakeup_reason = esp_sleep_get_wakeup_cause();
+  //wakeup_reason = esp_sleep_get_wakeup_cause();
 
-  switch (wakeup_reason) { // Button press
-    case ESP_SLEEP_WAKEUP_EXT0:
-    case ESP_SLEEP_WAKEUP_EXT1: 
-      esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
-      esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
-      esp_sleep_enable_timer_wakeup(DEBOUNCE_US); // Debounce
-      // ePaper display does not update properly after deep sleep
-      //esp_deep_sleep_start();
-      esp_light_sleep_start();
-      break;
-  }
+  //switch (wakeup_reason) { // Button press
+  //  case ESP_SLEEP_WAKEUP_EXT0:
+  //  case ESP_SLEEP_WAKEUP_EXT1: 
+  //    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
+  //    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
+  //    esp_sleep_enable_timer_wakeup(DEBOUNCE_US); // Debounce
+  //    // ePaper display does not update properly after deep sleep
+  //    //esp_deep_sleep_start();
+  //    esp_light_sleep_start();
+  //    break;
+  //}
 
-  if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Startup
+  //if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Startup
     // Configure
     fatcfg_init();
     cfg_init(); // Create config files
@@ -120,21 +135,23 @@ void setup() {
     cfg_init(); // Read config files
     // Sync Time over WiFi
     evt_us_time_sync_timeout = 0 + CFG_WIFI_TIMEOUT_US;
-    WiFi.setAutoReconnect(false);
-    WiFi.begin(CFG_WIFI_NAME, CFG_WIFI_PASS);
-    configTzTime(CFG_POSIX_TZ, CFG_NTP_SERVER);
+    network_connect();
     flags &= ~(FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC);
     flags |= FLAG_SYNCING;
-  }
-  else { // Deep-Sleep
-    display_init(false);
-    setenv("TZ", CFG_POSIX_TZ, 1);
-    tzset(); // save the TZ variable
-  }
+  //}
+  //else { // Deep-Sleep
+  //  display_init(false);
+  //  setenv("TZ", CFG_POSIX_TZ, 1);
+  //  tzset(); // save the TZ variable
+  //}
 
+#ifdef DEBUG
   Serial.begin(115200);
-  delay(10);
+  delay(1000);
   Serial.println("Starting WiFi clock.");
+#else
+  Serial.end();
+#endif
 }
 
 void loop() {
@@ -158,8 +175,10 @@ void loop() {
 
   if (epoch_us > evt_us_light_off) {
     if (flags & (FLAG_LIGHT1|FLAG_LIGHT2)) {
+#ifdef DEBUG
       Serial.print(epoch_us);
       Serial.println(" evt end: light ");
+#endif
       pixels.clear();
       digitalWrite(NEOPIXEL_POWER, HIGH); // off
       flags &= ~(FLAG_LIGHT1|FLAG_LIGHT2);
@@ -167,21 +186,26 @@ void loop() {
   }
   if (epoch_us > evt_us_disp_redraw) {
     if (flags & FLAG_CLEAR_DISP) {
+#ifdef DEBUG
       Serial.print(epoch_us);
       Serial.println(" evt end: clear ");
       flags &= ~(FLAG_CLEAR_DISP);
+#endif
     }
   }
   if (epoch_us > evt_us_time_sync_timeout) {
     if (flags & FLAG_SYNCING) {
+#ifdef DEBUG
       Serial.print(epoch_us);
       Serial.println(" evt end: timesync ");
       Serial.println(wl_status_to_string(WiFi.status()));
+#endif
       last_us_time_sync = (epoch_us + WIFI_POWEROFF_US); // +3s to allow WiFi to turn off, before syncing again
       if (WiFi.status() != WL_CONNECTED) { flags |= FLAG_ERR_WIFI_CONN; }
       if (epoch_us < YEAR_2000_US)       { flags |= FLAG_ERR_TIME_SYNC; }
-      WiFi.disconnect(true);
       flags &= ~(FLAG_SYNCING);
+      WiFi.disconnect(true);
+      delay(100);
     }
   }
 
@@ -191,8 +215,10 @@ void loop() {
 
   if (btn == 0x8) { // Turn on lights
     if (!(flags & FLAG_LIGHT1)) {
+#ifdef DEBUG
       Serial.print(epoch_us);
       Serial.println(" evt start: light1 ");
+#endif
       evt_us_light_off = epoch_us + CFG_LIGHT1_TIMEOUT_US;
       digitalWrite(NEOPIXEL_POWER, LOW); // on
       pixels.begin();
@@ -205,8 +231,10 @@ void loop() {
   }
   if (btn == 0x1) { // Turn on lights
     if (!(flags & FLAG_LIGHT2)) {
+#ifdef DEBUG
       Serial.print(epoch_us);
       Serial.println(" evt start: light2 ");
+#endif
       evt_us_light_off = epoch_us + CFG_LIGHT2_TIMEOUT_US;
       digitalWrite(NEOPIXEL_POWER, LOW); // on
       pixels.begin();
@@ -219,8 +247,10 @@ void loop() {
   }
   if (btn == 0xC) { // Clear screen for 1 minute (
     if (!(flags & FLAG_CLEAR_DISP)) {
+#ifdef DEBUG
       Serial.print(epoch_us);
       Serial.println(" evt start: clear ");
+#endif
       evt_us_disp_redraw = epoch_us + 60*1000000UL;
       display_clear();
       last_min = INT_MIN; // Force full update
@@ -229,12 +259,12 @@ void loop() {
   }
   if (btn == 0x3 || epoch_us > (last_us_time_sync+HOURS_24_US)) { // Sync time
     if (!(flags & FLAG_SYNCING)) {
+#ifdef DEBUG
       Serial.print(epoch_us);
       Serial.println(" evt start: timesync ");
+#endif
       evt_us_time_sync_timeout = epoch_us + CFG_WIFI_TIMEOUT_US;
-      WiFi.begin(CFG_WIFI_NAME, CFG_WIFI_PASS);
-      WiFi.reconnect();
-      configTzTime(CFG_POSIX_TZ, CFG_NTP_SERVER);
+      network_connect();
       flags &= ~(FLAG_ERR_WIFI_CONN | FLAG_ERR_TIME_SYNC);
       flags |= FLAG_SYNCING;
     }
@@ -308,11 +338,15 @@ void loop() {
     else delay(1);
   }
   else { // Sleep
-    //esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON); // needed to keep button pullups enabled, NEOPIXEL_POWER HIGH
+#ifdef DEBUG
+    Serial.flush();
+    Serial.end();
+#endif
+    digitalWrite(SPEAKER_SHUTDOWN, LOW); // off
+    //esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON); // needed to keep button pullups enabled, NEOPIXEL_POWER HIGH in deep sleep
     esp_sleep_enable_ext0_wakeup(GPIO_NUM_15, 0); // Wake on button A press
     esp_sleep_enable_ext1_wakeup(1<<11, ESP_EXT1_WAKEUP_ALL_LOW); // Wake on button D press
     esp_sleep_enable_timer_wakeup(sleep_us); // Enter sleep until next event
-    digitalWrite(SPEAKER_SHUTDOWN, LOW); // off
     if (epoch_us < evt_us_light_off) {
       esp_light_sleep_start();
     }
