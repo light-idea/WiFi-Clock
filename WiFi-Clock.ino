@@ -9,12 +9,12 @@
 
 #include "display.h"
 
-#undef DEBUG
+#undef CLKDBG
 
 #define DEBOUNCE_US (5000UL)
 #define YEAR_2000_US (946684800000000UL)
 #define HOURS_24_US (86400000000UL)
-#define WIFI_POWEROFF_US (3000000UL)
+#define WIFI_POWEROFF_US (5000000UL)
 
 /* Peripherals */
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
@@ -38,20 +38,7 @@ RTC_DATA_ATTR static uint64_t evt_us_disp_redraw = 0;
 RTC_DATA_ATTR static int last_min = INT_MIN;
 RTC_DATA_ATTR static int last_day = INT_MIN;
 RTC_DATA_ATTR static uint64_t last_us_time_sync = 0;
-
-const char* wl_status_to_string(wl_status_t status) {
-  switch (status) {
-    case WL_NO_SHIELD: return "NO_SHIELD";
-    case WL_IDLE_STATUS: return "IDLE_STATUS";
-    case WL_NO_SSID_AVAIL: return "NO_SSID_AVAIL";
-    case WL_SCAN_COMPLETED: return "SCAN_COMPLETED";
-    case WL_CONNECTED: return "CONNECTED";
-    case WL_CONNECT_FAILED: return "CONNECT_FAILED";
-    case WL_CONNECTION_LOST: return "CONNECTION_LOST";
-    case WL_DISCONNECTED: return "DISCONNECTED";
-  }
-  return "INVALID";
-}
+RTC_DATA_ATTR static wl_status_t last_wifi_status;
 
 void network_connect() {
   WiFi.enableSTA(true);
@@ -102,9 +89,11 @@ void setup() {
 
   //if (wakeup_reason==ESP_SLEEP_WAKEUP_UNDEFINED) { // Startup
     // Configure
-    fatcfg_init();
-    cfg_init(); // Create config files
     display_init(true);
+    if (!fatcfg_init()) {
+      display_update_error("Failed to access FAT filesystem.", "", false);
+    }
+    cfg_init(); // Create config files
 
     // 1. Check for Button Press
     btn = btn_read();
@@ -145,7 +134,7 @@ void setup() {
   //  tzset(); // save the TZ variable
   //}
 
-#ifdef DEBUG
+#ifdef CLKDBG
   Serial.begin(115200);
   delay(1000);
   Serial.println("Starting WiFi clock.");
@@ -162,7 +151,7 @@ void loop() {
   uint64_t epoch_us;
   // Display Time
   struct tm now;
-  char str_date[24]; // Longest date string: "Wednesday, Sep 20, 2019" = 23 chars + \0
+  char str_date[32]; // Adds some extra room for WiFi error messages.  Longest date string: "Wednesday, Sep 20, 2019" = 23 chars + \0
   char str_time[6]; // Longest time "12:00" = 5 chars + \0
   int curr_min;
   int curr_day;
@@ -175,7 +164,7 @@ void loop() {
 
   if (epoch_us > evt_us_light_off) {
     if (flags & (FLAG_LIGHT1|FLAG_LIGHT2)) {
-#ifdef DEBUG
+#ifdef CLKDBG
       Serial.print(epoch_us);
       Serial.println(" evt end: light ");
 #endif
@@ -186,7 +175,7 @@ void loop() {
   }
   if (epoch_us > evt_us_disp_redraw) {
     if (flags & FLAG_CLEAR_DISP) {
-#ifdef DEBUG
+#ifdef CLKDBG
       Serial.print(epoch_us);
       Serial.println(" evt end: clear ");
       flags &= ~(FLAG_CLEAR_DISP);
@@ -195,14 +184,14 @@ void loop() {
   }
   if (epoch_us > evt_us_time_sync_timeout) {
     if (flags & FLAG_SYNCING) {
-#ifdef DEBUG
+#ifdef CLKDBG
       Serial.print(epoch_us);
       Serial.println(" evt end: timesync ");
-      Serial.println(wl_status_to_string(WiFi.status()));
 #endif
-      last_us_time_sync = (epoch_us + WIFI_POWEROFF_US); // +3s to allow WiFi to turn off, before syncing again
-      if (WiFi.status() != WL_CONNECTED) { flags |= FLAG_ERR_WIFI_CONN; }
-      if (epoch_us < YEAR_2000_US)       { flags |= FLAG_ERR_TIME_SYNC; }
+      last_wifi_status = WiFi.status();
+      last_us_time_sync = (epoch_us + WIFI_POWEROFF_US); // +5s to allow WiFi to turn off, before syncing again
+      if (last_wifi_status != WL_CONNECTED) { flags |= FLAG_ERR_WIFI_CONN; }
+      if (epoch_us < YEAR_2000_US)          { flags |= FLAG_ERR_TIME_SYNC; }
       flags &= ~(FLAG_SYNCING);
       WiFi.disconnect(true);
       delay(100);
@@ -215,7 +204,7 @@ void loop() {
 
   if (btn == 0x8) { // Turn on lights
     if (!(flags & FLAG_LIGHT1)) {
-#ifdef DEBUG
+#ifdef CLKDBG
       Serial.print(epoch_us);
       Serial.println(" evt start: light1 ");
 #endif
@@ -231,7 +220,7 @@ void loop() {
   }
   if (btn == 0x1) { // Turn on lights
     if (!(flags & FLAG_LIGHT2)) {
-#ifdef DEBUG
+#ifdef CLKDBG
       Serial.print(epoch_us);
       Serial.println(" evt start: light2 ");
 #endif
@@ -247,7 +236,7 @@ void loop() {
   }
   if (btn == 0xC) { // Clear screen for 1 minute (
     if (!(flags & FLAG_CLEAR_DISP)) {
-#ifdef DEBUG
+#ifdef CLKDBG
       Serial.print(epoch_us);
       Serial.println(" evt start: clear ");
 #endif
@@ -259,7 +248,7 @@ void loop() {
   }
   if (btn == 0x3 || epoch_us > (last_us_time_sync+HOURS_24_US)) { // Sync time
     if (!(flags & FLAG_SYNCING)) {
-#ifdef DEBUG
+#ifdef CLKDBG
       Serial.print(epoch_us);
       Serial.println(" evt start: timesync ");
 #endif
@@ -282,6 +271,35 @@ void loop() {
     }
     else if (flags & FLAG_ERR_WIFI_CONN) { curr_day = -2;
       strcpy(str_date, "No WiFi connection!");
+      switch (last_wifi_status) {
+        case WL_NO_SHIELD:
+          strcpy(str_date, "WiFi Missing Shield");
+          break;
+        case WL_IDLE_STATUS:
+          strcpy(str_date, "WiFi Idle");
+          break;
+        case WL_NO_SSID_AVAIL:
+          strcpy(str_date, "WiFi Network Unavailable");
+          break;
+        case WL_SCAN_COMPLETED:
+          strcpy(str_date, "WiFi Scan Completed");
+          break;
+        case WL_CONNECTED:
+          strcpy(str_date, "WiFi Connected");
+          break;
+        case WL_CONNECT_FAILED:
+          strcpy(str_date, "WiFi Connection Failed");
+          break;
+        case WL_CONNECTION_LOST:
+          strcpy(str_date, "WiFi Connection Lost");
+          break;
+        case WL_DISCONNECTED:
+          strcpy(str_date, "WiFi Disconnected");
+          break;
+        default:
+          strcpy(str_date, "WiFi Unknown Error");
+          break;
+      }
     }
     else if (flags & FLAG_ERR_TIME_SYNC) { curr_day = -3;
       strcpy(str_date, "Unable to sync time!");
@@ -338,7 +356,7 @@ void loop() {
     else delay(1);
   }
   else { // Sleep
-#ifdef DEBUG
+#ifdef CLKDBG
     Serial.flush();
     Serial.end();
 #endif

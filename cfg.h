@@ -3,7 +3,7 @@
 
 #include <driver/rtc_io.h>
 
-const uint64_t CFG_WIFI_TIMEOUT_US = 60*1000000L;
+const uint64_t CFG_WIFI_TIMEOUT_US = 180000000UL; // 3 minutes to connect and sync
 
 extern RTC_DATA_ATTR char CFG_WIFI_NAME[33];
 extern RTC_DATA_ATTR char CFG_WIFI_PASS[65];

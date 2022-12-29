@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-void fatcfg_init();
+bool fatcfg_init();
 
 void fatcfg_msc_init();
 

@@ -49,7 +49,6 @@ FatFileSystem fatfs;
 // USB Mass Storage object
 Adafruit_USBD_MSC usb_msc;
 
-bool fs_formatted;  // Check if flash is formatted
 bool fs_changed;    // Set to true when browser write to flash
 
 FatFile root;
@@ -95,14 +94,10 @@ static bool msc_ready_callback(void)
   return ret;
 }
 
-void fatcfg_init()
+bool fatcfg_init()
 {
   flash.begin();
-  // Init file system on the flash
-  fs_formatted = fatfs.begin(&flash);
-  if ( !fs_formatted ) {
-    // TODO: Filesystem not formatted.
-  }
+  return fatfs.begin(&flash);
 }
 
 void fatcfg_msc_init() {
