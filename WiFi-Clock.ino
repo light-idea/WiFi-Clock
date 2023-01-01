@@ -3,6 +3,7 @@
 #include <time.h>
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
+#include <sntp.h>
 
 #include "cfg.h"
 #include "fatcfg.h"
@@ -14,7 +15,7 @@
 #define DEBOUNCE_US (5000UL)
 #define YEAR_2000_US (946684800000000UL)
 #define HOURS_24_US (86400000000UL)
-#define WIFI_POWEROFF_US (5000000UL)
+#define WIFI_POWEROFF_US (3000000UL)
 
 /* Peripherals */
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(4, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
@@ -92,6 +93,7 @@ void setup() {
     display_init(true);
     if (!fatcfg_init()) {
       display_update_error("Failed to access FAT filesystem.", "", false);
+      while (1) { delay(100); } // Wait forever
     }
     cfg_init(); // Create config files
 
@@ -156,6 +158,7 @@ void loop() {
   int curr_min;
   int curr_day;
   bool pm;
+  sntp_sync_status_t ntp_status;
 
   gettimeofday(&tv_now, NULL);
   epoch_us = (uint64_t)tv_now.tv_sec*1000000UL + (uint64_t)tv_now.tv_usec;
@@ -182,20 +185,24 @@ void loop() {
 #endif
     }
   }
-  if (epoch_us > evt_us_time_sync_timeout) {
-    if (flags & FLAG_SYNCING) {
+  ntp_status = sntp_get_sync_status();
+  if (ntp_status == SNTP_SYNC_STATUS_COMPLETED || 
+      (flags & FLAG_SYNCING && epoch_us > evt_us_time_sync_timeout)) {
 #ifdef CLKDBG
-      Serial.print(epoch_us);
-      Serial.println(" evt end: timesync ");
+    Serial.print(epoch_us);
+    Serial.println(" evt end: timesync ");
 #endif
-      last_wifi_status = WiFi.status();
-      last_us_time_sync = (epoch_us + WIFI_POWEROFF_US); // +5s to allow WiFi to turn off, before syncing again
-      if (last_wifi_status != WL_CONNECTED) { flags |= FLAG_ERR_WIFI_CONN; }
-      if (epoch_us < YEAR_2000_US)          { flags |= FLAG_ERR_TIME_SYNC; }
-      flags &= ~(FLAG_SYNCING);
-      WiFi.disconnect(true);
-      delay(100);
+    last_wifi_status = WiFi.status();
+    last_us_time_sync = (epoch_us + WIFI_POWEROFF_US); // +5s to allow WiFi to turn off, before syncing again
+    if (last_wifi_status != WL_CONNECTED) { 
+      flags |= FLAG_ERR_WIFI_CONN;
     }
+    if (epoch_us < YEAR_2000_US || ntp_status != SNTP_SYNC_STATUS_COMPLETED) {
+      flags |= FLAG_ERR_TIME_SYNC;
+    }
+    flags &= ~(FLAG_SYNCING);
+    WiFi.disconnect(true);
+    delay(100);
   }
 
   /* Event Start */
@@ -358,7 +365,6 @@ void loop() {
   else { // Sleep
 #ifdef CLKDBG
     Serial.flush();
-    Serial.end();
 #endif
     digitalWrite(SPEAKER_SHUTDOWN, LOW); // off
     //esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON); // needed to keep button pullups enabled, NEOPIXEL_POWER HIGH in deep sleep
@@ -366,7 +372,7 @@ void loop() {
     esp_sleep_enable_ext1_wakeup(1<<11, ESP_EXT1_WAKEUP_ALL_LOW); // Wake on button D press
     esp_sleep_enable_timer_wakeup(sleep_us); // Enter sleep until next event
     if (epoch_us < evt_us_light_off) {
-      esp_light_sleep_start();
+      //esp_light_sleep_start();
     }
     else {
       // ePaper display does not update properly after deep sleep

@@ -14,7 +14,24 @@
 - Core Debug Level: "None"
 - PSRAM: "Enabled"
 
+## Boards
+
+- esp32: 2.0.6
+
+## Libraries
+
+- Adafruit BusIO: 1.14.1
+- Adafruit GFX Library: 1.11.3
+- Adafruit NeoPixel: 1.10.7
+- Adafruit SPIFlash: 4.0.0
+- Adafruit TinyUSB Library: 1.17.0
+- GxEPD2: 1.5.0
+- MIDI Library: 5.0.2
+- SdFat - Adafruit Fork: 2.2.1
+
 ## Formatting Flash FAT Filesystem
 
-Run the *Adafruit SPIFlash -> SDFat_format* sketch.
+Upload the *Adafruit SPIFlash -> SDFat_format* sketch.
+
+TODO: Format the filesystem automatically.
 
