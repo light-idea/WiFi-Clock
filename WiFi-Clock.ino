@@ -40,6 +40,7 @@ RTC_DATA_ATTR static int last_min = INT_MIN;
 RTC_DATA_ATTR static int last_day = INT_MIN;
 RTC_DATA_ATTR static uint64_t last_us_time_sync = 0;
 RTC_DATA_ATTR static wl_status_t last_wifi_status;
+RTC_DATA_ATTR static sntp_sync_status_t last_ntp_status;
 
 void network_connect() {
   WiFi.enableSTA(true);
@@ -192,17 +193,17 @@ void loop() {
     Serial.print(epoch_us);
     Serial.println(" evt end: timesync ");
 #endif
+    last_ntp_status = ntp_status;
     last_wifi_status = WiFi.status();
-    last_us_time_sync = (epoch_us + WIFI_POWEROFF_US); // +5s to allow WiFi to turn off, before syncing again
-    if (last_wifi_status != WL_CONNECTED) { 
-      flags |= FLAG_ERR_WIFI_CONN;
-    }
-    if (epoch_us < YEAR_2000_US || ntp_status != SNTP_SYNC_STATUS_COMPLETED) {
+    last_us_time_sync = (epoch_us + WIFI_POWEROFF_US); // +3s to allow WiFi to disconnect, before syncing again
+    if (ntp_status != SNTP_SYNC_STATUS_COMPLETED || epoch_us < YEAR_2000_US) {
       flags |= FLAG_ERR_TIME_SYNC;
+      if (last_wifi_status != WL_CONNECTED) { 
+        flags |= FLAG_ERR_WIFI_CONN;
+      }
     }
     flags &= ~(FLAG_SYNCING);
     WiFi.disconnect(true);
-    delay(100);
   }
 
   /* Event Start */
@@ -309,7 +310,16 @@ void loop() {
       }
     }
     else if (flags & FLAG_ERR_TIME_SYNC) { curr_day = -3;
-      strcpy(str_date, "Unable to sync time!");
+      switch (last_ntp_status) {
+        case SNTP_SYNC_STATUS_COMPLETED:
+          strcpy(str_date, "Time Sync Completed?");
+        case SNTP_SYNC_STATUS_IN_PROGRESS:
+          strcpy(str_date, "Time Sync In Smooth Mode");
+        case SNTP_SYNC_STATUS_RESET:
+          strcpy(str_date, "Time Sync In Reset");
+        default:
+          strcpy(str_date, "Unable to sync time!");
+      }
     }
     else { curr_day = now.tm_yday;
       strftime(str_date, sizeof(str_date), "%A, %b %e %G", &now);
