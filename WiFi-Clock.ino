@@ -14,7 +14,7 @@
 
 #define DEBOUNCE_US (5000UL)
 #define YEAR_2000_US (946684800000000UL)
-#define HOURS_24_US (86400000000UL)
+#define RESYNC_US (14400000000UL)
 #define WIFI_POWEROFF_US (3000000UL)
 
 /* Peripherals */
@@ -43,6 +43,7 @@ RTC_DATA_ATTR static wl_status_t last_wifi_status;
 RTC_DATA_ATTR static sntp_sync_status_t last_ntp_status;
 
 void network_connect() {
+  delay(10);
   WiFi.enableSTA(true);
   WiFi.mode(WIFI_STA);
   delay(10);
@@ -149,6 +150,7 @@ void setup() {
 void loop() {
   // Buttons
   uint8_t btn;
+  uint8_t btn_db;
   // Epoch Time
   struct timeval tv_now;
   uint64_t epoch_us;
@@ -209,6 +211,11 @@ void loop() {
   /* Event Start */
 
   btn = btn_read();
+  if (btn) { // Debounce
+    delay(DEBOUNCE_US/1000);
+    btn_db = btn_read();
+    btn = (btn==btn_db) ? btn : 0;
+  }
 
   if (btn == 0x8) { // Turn on lights
     if (!(flags & FLAG_LIGHT1)) {
@@ -254,7 +261,7 @@ void loop() {
       flags |= FLAG_CLEAR_DISP;
     }
   }
-  if (btn == 0x3 || epoch_us > (last_us_time_sync+HOURS_24_US)) { // Sync time
+  if (btn == 0x3 || epoch_us > (last_us_time_sync+RESYNC_US)) { // Sync time
     if (!(flags & FLAG_SYNCING)) {
 #ifdef CLKDBG
       Serial.print(epoch_us);
@@ -368,9 +375,7 @@ void loop() {
   uint64_t sleep_us = evt_next - epoch_us;
 
   if (flags & FLAG_SYNCING) {
-    btn = btn_read();
-    if (btn) delay(DEBOUNCE_US/1000);
-    else delay(1);
+    delay(10);
   }
   else { // Sleep
 #ifdef CLKDBG
@@ -389,7 +394,6 @@ void loop() {
       //esp_deep_sleep_start();
       esp_light_sleep_start();
     }
-    if (btn) delay(DEBOUNCE_US/1000);
   }
 }
 
